@@ -118,7 +118,7 @@ defmodule APNS.MessageWorker do
         APNS.Error.new(message.id, @invalid_payload_size_code) |> state.config.callback_module.error(token)
         {:ok, err, state}
 
-      payload ->
+      payload when token != nil ->
         APNS.Logger.debug(message, "message's payload looks good")
         binary_payload = APNS.Package.to_binary(message, payload)
         case sender.send_package(socket, binary_payload) do
