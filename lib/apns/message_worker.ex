@@ -113,29 +113,31 @@ defmodule APNS.MessageWorker do
       false -> @payload_max_new
     end
 
-    case APNS.Payload.build_json(message, limit) do
-      {:error, :payload_size_exceeded} = err ->
-        APNS.Error.new(message.id, @invalid_payload_size_code) |> state.config.callback_module.error(token)
-        {:ok, err, state}
+    unless is_nil(message.token) do
+      case APNS.Payload.build_json(message, limit) do
+        {:error, :payload_size_exceeded} = err ->
+          APNS.Error.new(message.id, @invalid_payload_size_code) |> state.config.callback_module.error(token)
+          {:ok, err, state}
 
-      payload when token != nil ->
-        APNS.Logger.debug(message, "message's payload looks good")
-        binary_payload = APNS.Package.to_binary(message, payload)
-        case sender.send_package(socket, binary_payload) do
-          :ok ->
-            APNS.Logger.debug(message, "success sending")
-            {:ok, :ok, %{state | queue: [message | queue], counter: state.counter + 1}}
+        payload ->
+          APNS.Logger.debug(message, "message's payload looks good")
+          binary_payload = APNS.Package.to_binary(message, payload)
+          case sender.send_package(socket, binary_payload) do
+            :ok ->
+              APNS.Logger.debug(message, "success sending")
+              {:ok, :ok, %{state | queue: [message | queue], counter: state.counter + 1}}
 
-          {:error, reason} ->
-            if message.retry_count >= 10 do
-              APNS.Logger.error(message, "#{message.retry_count}th error #{reason} message will not be delivered")
-            else
-              APNS.Logger.warn(message, "#{reason} retrying…")
-              retrier.push(state.pool, Map.put(message, :retry_count, message.retry_count + 1))
-            end
+            {:error, reason} ->
+              if message.retry_count >= 10 do
+                APNS.Logger.error(message, "#{message.retry_count}th error #{reason} message will not be delivered")
+              else
+                APNS.Logger.warn(message, "#{reason} retrying…")
+                retrier.push(state.pool, Map.put(message, :retry_count, message.retry_count + 1))
+              end
 
-            {:error, reason, %{state | queue: [], counter: 0}}
-        end
+              {:error, reason, %{state | queue: [], counter: 0}}
+          end
+      end
     end
   end
 
